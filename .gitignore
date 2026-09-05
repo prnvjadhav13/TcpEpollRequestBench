@@ -1,0 +1,27 @@
+# Build products
+/build/
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/compile_commands.json
+
+# Generated benchmark data
+/*.bin
+/*.bin.tmp.*
+/client_request_keys.txt
+/server_request_response_mapping.bin
+
+# Local lab material retained only for migration/testing
+/cert/
+/certs/
+
+# Runtime and editor files
+*.log
+*.pid
+core
+core.*
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
