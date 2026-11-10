@@ -1,11 +1,18 @@
 CXX ?= g++
 CPPFLAGS ?=
+
+# Boost.Unordered flat containers require Boost 1.81 or newer.
+BOOST_ROOT ?= $(HOME)/opt/boost_1_92_0
+CPPFLAGS += -I$(BOOST_ROOT)
 CXXFLAGS ?=
 LDFLAGS ?=
 
 COMMON_FLAGS := -std=c++23 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -pthread
 COMMON_HEADERS := tcp_common_config.h
-SERVER_HEADERS := $(COMMON_HEADERS) tcp_server_epoll.h
+SERVER_SOURCES := tcp_server_main.cpp tcp_server_event_loop.cpp tcp_server_mapping.cpp \
+	tcp_server_connection.cpp tcp_server_fd.cpp tcp_server_runtime.cpp
+SERVER_HEADERS := $(COMMON_HEADERS) tcp_server_event_loop.hpp tcp_server_mapping.hpp \
+	tcp_server_connection.hpp tcp_server_fd.hpp tcp_server_runtime.hpp
 
 BUILD_DIR := build
 DEBUG_DIR := $(BUILD_DIR)/debug
@@ -20,7 +27,14 @@ SANITIZER_LDFLAGS := -fsanitize=address,undefined
 PRODUCTION_FLAGS := -O2 -DNDEBUG -D_FORTIFY_SOURCE=3 \
 	-fstack-protector-strong -fstack-clash-protection -fPIE
 PRODUCTION_LDFLAGS := -Wl,-z,relro,-z,now -pie
-PERFORMANCE_FLAGS := -O3 -DNDEBUG -march=native -flto
+# Some ARM VMs expose native CPU extensions newer than the system assembler.
+# Keep ARM code generation compatible; allow explicit CPU flags when desired.
+ifneq (,$(findstring aarch64,$(shell $(CXX) -dumpmachine)))
+PERFORMANCE_ARCH_FLAGS ?= -march=armv8-a -mtune=native
+else
+PERFORMANCE_ARCH_FLAGS ?= -march=native
+endif
+PERFORMANCE_FLAGS := -O3 -DNDEBUG $(PERFORMANCE_ARCH_FLAGS) -flto
 PERFORMANCE_LDFLAGS := -flto
 
 .DEFAULT_GOAL := production
@@ -44,26 +58,26 @@ performance: $(PERFORMANCE_DIR)/tcp_server_epoll $(PERFORMANCE_DIR)/tcp_client
 $(DEBUG_DIR) $(SANITIZER_DIR) $(PRODUCTION_DIR) $(PERFORMANCE_DIR):
 	mkdir -p $@
 
-$(DEBUG_DIR)/tcp_server_epoll: tcp_server_epoll.cpp $(SERVER_HEADERS) Makefile | $(DEBUG_DIR)
-	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(DEBUG_FLAGS) $< -o $@ $(LDFLAGS)
+$(DEBUG_DIR)/tcp_server_epoll: $(SERVER_SOURCES) $(SERVER_HEADERS) Makefile | $(DEBUG_DIR)
+	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(DEBUG_FLAGS) $(SERVER_SOURCES) -o $@ $(LDFLAGS)
 
 $(DEBUG_DIR)/tcp_client: tcp_client.cpp $(COMMON_HEADERS) Makefile | $(DEBUG_DIR)
 	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(DEBUG_FLAGS) $< -o $@ $(LDFLAGS)
 
-$(SANITIZER_DIR)/tcp_server_epoll: tcp_server_epoll.cpp $(SERVER_HEADERS) Makefile | $(SANITIZER_DIR)
-	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(SANITIZER_FLAGS) $< -o $@ $(LDFLAGS) $(SANITIZER_LDFLAGS)
+$(SANITIZER_DIR)/tcp_server_epoll: $(SERVER_SOURCES) $(SERVER_HEADERS) Makefile | $(SANITIZER_DIR)
+	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(SANITIZER_FLAGS) $(SERVER_SOURCES) -o $@ $(LDFLAGS) $(SANITIZER_LDFLAGS)
 
 $(SANITIZER_DIR)/tcp_client: tcp_client.cpp $(COMMON_HEADERS) Makefile | $(SANITIZER_DIR)
 	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(SANITIZER_FLAGS) $< -o $@ $(LDFLAGS) $(SANITIZER_LDFLAGS)
 
-$(PRODUCTION_DIR)/tcp_server_epoll: tcp_server_epoll.cpp $(SERVER_HEADERS) Makefile | $(PRODUCTION_DIR)
-	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(PRODUCTION_FLAGS) $< -o $@ $(LDFLAGS) $(PRODUCTION_LDFLAGS)
+$(PRODUCTION_DIR)/tcp_server_epoll: $(SERVER_SOURCES) $(SERVER_HEADERS) Makefile | $(PRODUCTION_DIR)
+	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(PRODUCTION_FLAGS) $(SERVER_SOURCES) -o $@ $(LDFLAGS) $(PRODUCTION_LDFLAGS)
 
 $(PRODUCTION_DIR)/tcp_client: tcp_client.cpp $(COMMON_HEADERS) Makefile | $(PRODUCTION_DIR)
 	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(PRODUCTION_FLAGS) $< -o $@ $(LDFLAGS) $(PRODUCTION_LDFLAGS)
 
-$(PERFORMANCE_DIR)/tcp_server_epoll: tcp_server_epoll.cpp $(SERVER_HEADERS) Makefile | $(PERFORMANCE_DIR)
-	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(PERFORMANCE_FLAGS) $< -o $@ $(LDFLAGS) $(PERFORMANCE_LDFLAGS)
+$(PERFORMANCE_DIR)/tcp_server_epoll: $(SERVER_SOURCES) $(SERVER_HEADERS) Makefile | $(PERFORMANCE_DIR)
+	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(PERFORMANCE_FLAGS) $(SERVER_SOURCES) -o $@ $(LDFLAGS) $(PERFORMANCE_LDFLAGS)
 
 $(PERFORMANCE_DIR)/tcp_client: tcp_client.cpp $(COMMON_HEADERS) Makefile | $(PERFORMANCE_DIR)
 	$(CXX) $(CPPFLAGS) $(COMMON_FLAGS) $(CXXFLAGS) $(PERFORMANCE_FLAGS) $< -o $@ $(LDFLAGS) $(PERFORMANCE_LDFLAGS)

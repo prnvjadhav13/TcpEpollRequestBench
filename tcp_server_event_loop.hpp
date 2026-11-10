@@ -17,8 +17,7 @@ struct EventLoopStats {
     std::uint64_t closed = 0;
 };
 
-// Owns one epoll-based TCP event loop.  The implementation details are kept
-// private so callers only need this small, stable interface.
+// Public interface for one TCP event-loop worker; Linux epoll details are private.
 class EventLoop {
 public:
     // Creates a worker identified by loop_id that listens on listen_port,

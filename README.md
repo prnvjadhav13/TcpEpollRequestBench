@@ -73,6 +73,15 @@ connection. The bundled client reuses one connection per worker across requests
 and rounds. This is not HTTP; the binary length prefix is the response-framing
 contract and is included in network bytes but excluded from payload statistics.
 
+Server implementation is split by responsibility: `tcp_server_main.cpp`
+contains command-line handling and worker coordination,
+`tcp_server_event_loop.cpp` implements each epoll worker declared in
+`tcp_server_event_loop.hpp`,
+`tcp_server_mapping.cpp` handles request/response mappings,
+`tcp_server_connection.cpp` manages per-client state, and
+`tcp_server_fd.cpp` owns descriptor and signal RAII utilities. Their internal
+interfaces are declared in the corresponding headers.
+
 Client rounds have an intentional completion barrier: all requests in a round
 finish before its consolidated statistics and optional ordered verbose results
 are printed, and only then may the next `--forever` round begin. This makes
