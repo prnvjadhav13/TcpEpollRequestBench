@@ -7,9 +7,24 @@ different machines.
 
 ## Purpose
 
+The project demonstrates how to build a TCP server intended to scale as the
+number of open connections grows, including experiments targeting millions of
+connections when the host and operating-system resource limits permit. It uses
+Linux's event-driven `epoll` API and C++ `std::jthread` worker threads to handle
+many mostly-idle connections without dedicating one server thread to each
+connection. It also provides a client for measuring request throughput and
+response bandwidth as concurrency changes.
+
+The million-connection figure is an experiment target, not a result or a
+guarantee: actual capacity depends on memory, file-descriptor limits, kernel
+settings, hardware, workload, and the number and capacity of event loops. The
+bundled client supports at most 4,096 concurrent workers/connections, so
+million-connection tests require external or distributed load generation.
+
 The project demonstrates how to:
 
-- handle many TCP connections with multiple independent `epoll` event loops;
+- handle many TCP connections with multiple independent `epoll` event loops on
+  C++ `std::jthread` workers;
 - distribute accepted connections across server workers with `SO_REUSEPORT`;
 - process fragmented and pipelined requests and partial nonblocking writes safely;
 - enforce connection, request-size, and idle-time limits;
@@ -42,19 +57,21 @@ encrypted Internet-facing service.
 
 The main components are:
 
-- `tcp_server_epoll` uses one `epoll` event loop per worker thread.
-- Each server worker owns a `SO_REUSEPORT` listening socket, its active
+- `tcp_server_epoll` starts one `std::jthread` and one `epoll` event loop per
+  worker. Each worker owns a `SO_REUSEPORT` listening socket, its active
   connection states, and its allocation-free timeout wheel. Connections use
   level-triggered notifications and remain assigned to one event loop for their
-  lifetime. Bounded work per event provides fairness without risking an
-  edge-triggered stall when configuration limits change.
+  lifetime. Bounded work per event provides fairness, and the configured
+  connection capacity is `--event-loops` multiplied by
+  `--max-connections-per-loop`.
 - The server loads `server_request_response_mapping.bin` once at startup. The
   default `mmap-view` loader indexes keys and keeps response views in a
   read-only anonymous snapshot, avoiding per-payload allocations without
   retaining a vulnerable file-backed mapping.
-- `tcp_client` opens one persistent connection per worker and reports success, throughput,
-  response bandwidth, and categorized connection failures. It creates a fixed
-  worker-thread set once, feeds it through a bounded condition-variable queue,
+- `tcp_client` opens one persistent connection per worker and reports success,
+  request throughput, response bandwidth, and categorized connection failures.
+  It creates a fixed worker-thread set once, feeds it through a bounded
+  condition-variable queue,
   and reuses those threads across all rounds. Each worker performs one complete
   framed request/response transaction at a time on that connection and sleeps
   without busy-spinning when the queue is empty. A stale connection is replaced
@@ -66,8 +83,9 @@ The main components are:
 
 The deliberately small protocol accepts newline-terminated request keys. A
 known key returns a four-byte big-endian payload length followed by its binary
-payload. The server supports keep-alive and up to 16 pipelined responses per
-connection; responses are emitted in request order.
+payload. Request lines are limited to 1,024 bytes, and generated response
+payloads are 2,000-4,000 bytes. The server supports keep-alive and up to 16
+pipelined responses per connection; responses are emitted in request order.
 An empty, oversized, unknown, or excessively pipelined request closes the
 connection. The bundled client reuses one connection per worker across requests
 and rounds. This is not HTTP; the binary length prefix is the response-framing
@@ -100,7 +118,7 @@ only objective is maximum uninterrupted throughput.
 ## Build
 
 The included `Makefile` builds the server and client together. Run one of these
-targets inside the `tcp_program` directory:
+targets from the repository root:
 
 ```bash
 make debug
@@ -123,7 +141,7 @@ The variants are kept in separate directories:
 Build every variant or display the available targets with:
 
 ```bash
-make all-variants
+make all
 make help
 ```
 
@@ -178,7 +196,7 @@ On the server machine, generate the mapping and key file once. For an initial
 remote test, 10,000 entries is sufficient:
 
 ```bash
-cd /path/to/tcp_program
+cd /path/to/TcpEpollRequestBench
 
 ./build/production/tcp_server_epoll \
     --mapping-file server_request_response_mapping.bin \
@@ -197,8 +215,8 @@ disk space, and generation time.
 From the client machine, pull the file from the server:
 
 ```bash
-scp USER@SERVER_IP:/path/to/tcp_program/client_request_keys.txt \
-    /path/to/tcp_program/
+scp USER@SERVER_IP:/path/to/TcpEpollRequestBench/client_request_keys.txt \
+    /path/to/TcpEpollRequestBench/
 ```
 
 Do not copy `server_request_response_mapping.bin`; it is server-only data.
@@ -249,7 +267,7 @@ when applicable, the cloud security group. Prefer a private network or VPN.
 On the client machine:
 
 ```bash
-cd /path/to/tcp_program
+cd /path/to/TcpEpollRequestBench
 
 ./build/production/tcp_client SERVER_IP 8080 \
     --keys-file client_request_keys.txt \
@@ -269,9 +287,26 @@ server. The connection timeout is five seconds.
 
 ## Scalability and performance testing
 
-Build with `-O2 -DNDEBUG`, use summary mode, and run the client from another
-machine so server and client CPU usage do not compete. Do not use `--verbose`
-for benchmarks because terminal output overwhelms the workload.
+Build the `performance` target for measurements (`-O3 -flto` with local CPU
+optimization), use summary mode, and run the client from another machine so
+server and client CPU usage do not compete. Do not use `--verbose` for
+benchmarks because terminal output overwhelms the workload.
+
+The server's configured connection ceiling is
+`--event-loops * --max-connections-per-loop`; for example, 16 loops with 62,500
+connections per loop configure a ceiling of one million. This is only a
+configuration target. The server checks that the requested descriptors fit the
+process's soft `RLIMIT_NOFILE`, but it cannot ensure the host has enough memory,
+kernel capacity, CPU, or network bandwidth to reach that ceiling. Check and
+raise applicable per-process and system limits before testing, and observe
+actual accepted connections and resource use. The server prints accepted,
+rejected, and closed connection totals when it shuts down.
+
+The server uses level-triggered epoll notifications and bounded accept/read/write
+work per event so a busy connection does not monopolize a worker. `SO_REUSEPORT`
+allows each worker to accept connections on its own listener. These design
+choices support experiments at increasing connection counts; they do not
+replace measuring behavior on the target machine.
 
 Run a concurrency sweep instead of testing only one value:
 
@@ -287,7 +322,8 @@ Record these fields for every run:
 
 - `success`, `failed`, and `connect_failed`
 - `elapsed_ms`
-- `requests_per_second`
+- `requests_per_second` (requests attempted during the round divided by elapsed
+  time)
 - `successful_MiB_per_second`
 - server and client CPU utilization
 - server resident memory and network utilization
@@ -310,12 +346,32 @@ Each worker reuses one TCP connection. Connection setup and teardown are
 amortized across its requests; a reconnect is performed after a stale socket or
 I/O failure.
 
+## Useful server options
+
+- `--event-loops N`: number of event-loop workers (default: available CPU count)
+- `--max-connections-per-loop N`: per-worker active connection ceiling (default:
+  10,000); total configured capacity is the product of this and `--event-loops`
+- `--idle-timeout-seconds N`: close connections that remain idle for this many
+  seconds (default: 15)
+- `--mapping-file PATH`: server-side request/response mapping (default:
+  `server_request_response_mapping.bin`)
+- `--mapping-loader MODE`: choose `ifstream`, `mmap`, or `mmap-view` (default:
+  `mmap-view`)
+- `--regen-mapping --mapping-entries N`: explicitly generate a mapping with up
+  to 1,000,000 entries; `--mapping-entries` requires `--regen-mapping`
+- `--export-keys N --keys-output PATH`: export valid request keys for the
+  bundled client without copying the server mapping file
+
+Run `tcp_server_epoll --help` and `tcp_client --help` for the full command-line
+usage and option limits. The server accepts IPv4 connections on all interfaces;
+restrict access with a firewall and use a trusted network.
+
 ## Useful client options
 
-- `--request-count N`: requests sent in each round
+- `--request-count N`: requests sent in each round (default: 8)
 - `--max-concurrency N`: maximum worker threads and in-flight requests; the
-  default is one worker per CPU reported as available to the process (or one
-  worker if CPU detection is unavailable)
+  maximum is 4,096; the default is one worker per CPU reported to the process
+  (or one worker if CPU detection is unavailable)
 - `--queue-capacity N`: bounded number of requests waiting for workers; the
   default is twice the effective worker count, capped by the requests in one
   round
