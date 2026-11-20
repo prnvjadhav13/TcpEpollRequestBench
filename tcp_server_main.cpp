@@ -389,12 +389,13 @@ void start_listen(int listen_port,
 }
 
 // Parses server and mapping options, initializes the shared request mapping,
-// optionally exports keys, and starts listeners. argc/argv are the CLI inputs.
+// exports keys when requested or regenerated, and starts listeners if requested.
 void print_server_usage(std::ostream& output, std::string_view program) {
     output
         << "Usage:\n"
         << "  " << program << " --listen <port> [options]\n"
-        << "  " << program << " --export-keys <count> [options]\n\n"
+        << "  " << program << " --export-keys <count> [options]\n"
+        << "  " << program << " --regen-mapping [options]\n\n"
         << "Options:\n"
         << "  -h, --help                         Show this help and exit\n"
         << "  --listen <port>                    Listen on TCP port 1..65535\n"
@@ -402,7 +403,8 @@ void print_server_usage(std::ostream& output, std::string_view program) {
         << tcp_common::kDefaultServerMappingFile << ")\n"
         << "  --mapping-loader <mode>            ifstream, mmap, or mmap-view\n"
         << "                                      (default: mmap-view)\n"
-        << "  --regen-mapping                    Regenerate the mapping file\n"
+        << "  --regen-mapping                    Regenerate the mapping and export its keys\n"
+        << "                                      to the default client keys file\n"
         << "  --mapping-entries <count>          Entries generated with --regen-mapping\n"
         << "  --event-loops <count>              Epoll worker count (default: CPU count)\n"
         << "  --max-connections-per-loop <count> Connection limit per epoll worker\n"
@@ -418,7 +420,7 @@ void print_server_usage(std::ostream& output, std::string_view program) {
         << "  " << program
         << " --listen 23456 --mapping-file server --mapping-loader mmap-view\n"
         << "  " << program
-        << " --regen-mapping --mapping-entries 500000 --export-keys 500000\n\n"
+        << " --regen-mapping --mapping-entries 500000\n\n"
         << "Options use a space between the option and its value; for example,\n"
         << "--mapping-file server (not --mapping-file=server).\n";
 }
@@ -549,9 +551,10 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        if (!has_listen && !print_keys_requested) {
+        if (!has_listen && !print_keys_requested && !force_regen_mapping) {
             throw std::invalid_argument(
-                "Provide at least one mode: --listen <port> and/or --export-keys <N>");
+                "Provide at least one mode: --listen <port>, --export-keys <N>, "
+                "or --regen-mapping");
         }
 
         if (keys_output_requested && !print_keys_requested) {
@@ -582,6 +585,12 @@ int main(int argc, char* argv[]) {
                                    force_regen_mapping,
                                    mapping_load_mode,
                                    mapping_entries);
+
+        if (force_regen_mapping &&
+            (!print_keys_requested ||
+             keys_output_file != tcp_common::kDefaultClientKeysFile)) {
+            print_request_keys(mapping_entries, tcp_common::kDefaultClientKeysFile);
+        }
 
         if (print_keys_requested) {
             print_request_keys(print_keys_count, keys_output_file);

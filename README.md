@@ -208,10 +208,11 @@ the wrong directory cannot silently generate a large file:
 ./build/production/tcp_server_epoll \
     --mapping-file server_request_response_mapping.bin \
     --mapping-entries 10000 \
-    --regen-mapping \
-    --export-keys 10000 \
-    --keys-output client_request_keys.txt
+    --regen-mapping
 ```
+
+Regenerating the mapping also exports all generated keys to the default
+`client_request_keys.txt` in the current directory.
 
 Start the server in the first terminal. `--regen-mapping` is intentionally
 omitted so this run reuses the exact mapping from which the keys were exported:
@@ -252,9 +253,7 @@ cd /path/to/TcpEpollRequestBench
 ./build/production/tcp_server_epoll \
     --mapping-file server_request_response_mapping.bin \
     --mapping-entries 10000 \
-    --regen-mapping \
-    --export-keys 10000 \
-    --keys-output client_request_keys.txt
+    --regen-mapping
 ```
 
 For a larger working set, increase `--mapping-entries` up to 500,000. The full
@@ -409,9 +408,12 @@ I/O failure.
 - `--mapping-loader MODE`: choose `ifstream`, `mmap`, or `mmap-view` (default:
   `mmap-view`)
 - `--regen-mapping --mapping-entries N`: explicitly generate a mapping with up
-  to 1,000,000 entries; `--mapping-entries` requires `--regen-mapping`
+  to 1,000,000 entries; `--mapping-entries` requires `--regen-mapping`.
+  Regeneration also exports all generated keys to the default
+  `client_request_keys.txt` in the current directory.
 - `--export-keys N --keys-output PATH`: export valid request keys for the
-  bundled client without copying the server mapping file
+  bundled client without copying the server mapping file; useful for exporting
+  keys from an existing mapping or to a custom path
 
 Run `tcp_server_epoll --help` and `tcp_client --help` for the full command-line
 usage and option limits. The server accepts IPv4 connections on all interfaces;
