@@ -1,5 +1,56 @@
 # TcpEpollRequestBench
 
+## Project overview
+
+The project, designed and developed by me, demonstrates a scalable Linux TCP
+server architecture capable of handling large numbers of concurrent
+connections using multiple independent `epoll` event loops and asynchronous,
+non-blocking I/O. `TcpEpollRequestBench` is a Linux project for learning,
+validating, and measuring a scalable TCP request/response design. It includes
+an epoll-based TCP server and a concurrent load-test client. Key design aspects
+include:
+
+1. A multi-worker-thread `epoll` architecture allows multiple independent
+   worker threads, each owning its own `SO_REUSEPORT` listening socket and
+   `epoll` event loop. Linux distributes incoming connections among worker
+   threads, after which each worker independently manages connection
+   acceptance, request processing, and response transmission using non-blocking
+   I/O and readiness notifications. By avoiding a dedicated thread per
+   connection, the design scales efficiently to high connection counts while
+   maintaining worker-thread isolation, eliminating lock and resource
+   contention, and ensuring predictable resource utilization.
+2. Non-blocking, event-driven connection handling avoids a thread-per-
+   connection model.
+3. The server supports fragmented requests, persistent connections,
+   pipelining, partial reads and writes, and bounded per-event processing.
+4. Connection and resource limits are configurable, and shutdown is graceful.
+5. C++ ownership of file descriptors and memory mappings is explicit. Read-only
+   response data is served from a memory-mapped snapshot, avoiding additional
+   copies in the data path. A flat hash map enables fast lookups, while the
+   snapshot avoids extra kernel-space or user-space copies, maximizing
+   throughput and minimizing latency.
+6. A benchmarking client reports throughput, response bandwidth, and connection
+   successes and failures across concurrency levels.
+
+The project demonstrates a scalable Linux TCP server architecture capable of
+handling large numbers of concurrent connections using multiple independent
+`epoll` event loops and asynchronous, non-blocking I/O. Each worker owns its
+own `SO_REUSEPORT` listener socket and connection set, enabling efficient
+connection distribution and event processing across CPU cores.
+
+The project also demonstrates clear ownership of file descriptors and memory
+mappings, efficient read-only response serving using `mmap`, graceful shutdown,
+connection back-pressure, and clear separation of private server response data
+from client-side test data.
+
+Through this implementation, I explored key systems-programming concepts
+including event-driven networking, scalable connection management,
+asynchronous I/O, Linux resource management, and TCP performance benchmarking.
+
+The project is intended for learning and controlled benchmarking; its
+configured connection capacity is not a measured result and depends on system
+resources and workload.
+
 TcpEpollRequestBench is a C++23/Linux project for learning, validating, and
 measuring a scalable TCP request/response design. It includes an `epoll`-based
 server and a concurrent load-test client that can run on the same machine or on
