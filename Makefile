@@ -11,8 +11,8 @@ COMMON_FLAGS := -std=c++23 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -pthre
 COMMON_HEADERS := tcp_common_config.h
 SERVER_SOURCES := tcp_server_main.cpp tcp_server_event_loop.cpp tcp_server_mapping.cpp \
 	tcp_server_connection.cpp tcp_server_fd.cpp tcp_server_runtime.cpp
-SERVER_HEADERS := $(COMMON_HEADERS) tcp_server_event_loop.hpp tcp_server_mapping.hpp \
-	tcp_server_connection.hpp tcp_server_fd.hpp tcp_server_runtime.hpp
+SERVER_HEADERS := $(COMMON_HEADERS) tcp_server_event_loop.hpp tcp_server_event_loop_impl.hpp \
+	tcp_server_mapping.hpp tcp_server_connection.hpp tcp_server_fd.hpp tcp_server_runtime.hpp
 
 BUILD_DIR := build
 DEBUG_DIR := $(BUILD_DIR)/debug
